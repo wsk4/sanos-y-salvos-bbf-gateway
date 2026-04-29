@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # 1. Base de Datos con Soporte Espacial (PostgreSQL + PostGIS)
+  db-postgis:
+    image: postgis/postgis:15-3.3
+    container_name: sanos_db_postgis
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: sanosysalvos_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # 2. Microservicio: Gestor de Mascotas
+  ms-mascotas:
+    build: 
+      context: ./ms-mascotas # Cambia esto si la carpeta de tu API se llama distinto
+    container_name: sanos_ms_mascotas
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db-postgis
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db-postgis:5432/sanosysalvos_db
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=admin123
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+
+  # 3. Microservicio: Geolocalización
+  ms-geolocalizacion:
+    build: 
+      context: ./ms-geolocalizacion # Cambia esto si la carpeta de tu API se llama distinto
+    container_name: sanos_ms_geolocalizacion
+    ports:
+      - "8081:8081"
+    depends_on:
+      - db-postgis
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db-postgis:5432/sanosysalvos_db
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=admin123
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+
+  # 4. API Gateway / BFF
+  bff-gateway:
+    build: 
+      context: ./bff-gateway # Cambia esto si la carpeta de tu API se llama distinto
+    container_name: sanos_bff_gateway
+    ports:
+      - "8082:8082"
+    depends_on:
+      - ms-mascotas
+      - ms-geolocalizacion
+    environment:
+      # Las URLs apuntan a los nombres de los contenedores dentro de la red Docker
+      - MICROSERVICIO_MASCOTAS_URL=http://sanos_ms_mascotas:8080/api/v1/mascotas
+      - MICROSERVICIO_GEOLOCALIZACION_URL=http://sanos_ms_geolocalizacion:8081/api/v1/geolocalizacion
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI=https://tu-clerk-issuer-url.clerk.accounts.dev/ # Actualiza con tu URL real de Clerk
+
+# Definición del volumen para que la base de datos no se borre al apagar Docker
+volumes:
+  postgis_data:
